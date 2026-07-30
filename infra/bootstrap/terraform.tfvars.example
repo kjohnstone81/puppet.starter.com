@@ -1,0 +1,3 @@
+project_id        = "my-gcp-project"
+region            = "europe-west1"
+github_repository = "kjohnstone81/puppet.starter.com"

@@ -1,0 +1,89 @@
+name: CI
+
+# Runs on every pull request and on pushes to main. Nothing here touches GCP,
+# so it needs no cloud credentials.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  app:
+    name: App — lint, typecheck, build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - run: npm ci
+
+      - run: npm run lint
+
+      - run: npm run typecheck
+
+      - run: npm run build
+
+  docker:
+    name: App — container builds
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      # Build only — catches Dockerfile breakage on a PR without needing
+      # registry credentials.
+      - uses: docker/build-push-action@v6
+        with:
+          context: ./app
+          file: ./app/Dockerfile
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  terraform:
+    name: Terraform — format and validate
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+          terraform_wrapper: false
+
+      - name: Format check
+        run: terraform fmt -check -recursive infra/
+
+      # Validate without a backend: this only checks the configuration is
+      # syntactically and semantically sound, so it needs no cloud access.
+      - name: Validate app stack
+        working-directory: infra/terraform
+        run: |
+          terraform init -backend=false
+          terraform validate
+
+      - name: Validate bootstrap stack
+        working-directory: infra/bootstrap
+        run: |
+          terraform init -backend=false
+          terraform validate

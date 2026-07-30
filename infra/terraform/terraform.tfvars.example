@@ -1,0 +1,17 @@
+# CI passes project_id, region, and image on the command line. Everything a
+# human chooses lives here.
+
+project_id  = "my-gcp-project"
+region      = "europe-west1"
+admin_email = "owner@example.com"
+
+# Fixed for the life of the database — choose before the first apply.
+#   eur3 / nam5 for multi-region, or a single region like europe-west1.
+firestore_location = "eur3"
+
+# Only set when serving from a custom domain you've verified.
+# custom_domain   = "booking.example.com"
+# public_base_url = "https://booking.example.com"
+
+min_instances = 0
+max_instances = 10
