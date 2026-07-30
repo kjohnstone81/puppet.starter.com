@@ -44,11 +44,14 @@ every page without touching a stylesheet.
 You need: a GCP project with billing enabled, `gcloud` and `terraform` locally, and
 admin rights on this GitHub repository.
 
+Before starting, make sure the project has **billing enabled** — Cloud Run,
+Artifact Registry, and Firestore all refuse to provision without it.
+
 ### 1. Bootstrap the project
 
 This creates the Terraform state bucket, the service account GitHub Actions
-impersonates, and the Workload Identity Federation pool that lets it do so
-without a downloadable JSON key.
+impersonates, the Workload Identity Federation pool that lets it do so without a
+downloadable JSON key, and the four empty secret containers.
 
 ```bash
 gcloud auth application-default login
@@ -88,22 +91,41 @@ could mint tokens against your pool. To narrow further to one branch, set
 
 ### 2. Create the Google OAuth client
 
-In the Cloud console under **APIs & Services -> Credentials**, create an OAuth
-client of type **Web application**. You'll add the redirect URI after the first
-deploy, once the Cloud Run URL exists. Also configure the OAuth consent screen and
-add the calendar scopes:
+In the Cloud console under **APIs & Services -> OAuth consent screen**, then
+**Credentials -> Create credentials -> OAuth client ID -> Web application**.
+
+Add these scopes to the consent screen:
 
 - `https://www.googleapis.com/auth/calendar.events`
 - `https://www.googleapis.com/auth/calendar.readonly`
 
-While the consent screen is in "Testing", add the owner's Google account as a test
-user, or sign-in will be refused.
+Leave the redirect URI blank for now — you'll add it in step 7, once the Cloud Run
+URL exists.
+
+> **Publishing status matters more than it looks.** While the consent screen is in
+> **Testing**, Google expires refresh tokens after **7 days**. The owner would have
+> to reconnect the calendar every week or bookings would silently stop showing
+> availability. For anything beyond a trial:
+>
+> - **Google Workspace account:** set the consent screen to **Internal**. No
+>   expiry, no verification.
+> - **Personal Gmail account:** click **Publish app** to move it to Production.
+>   Calendar scopes are "sensitive", so an unverified app shows a warning screen
+>   on sign-in — you can click through it, and refresh tokens stop expiring.
+>   Verification is only needed once you have many users, which a single-owner
+>   booking site never will.
+>
+> In Testing mode, also add the owner's Google account under **Test users**, or
+> sign-in is refused outright.
 
 ### 3. Populate the secrets
 
-Terraform creates the secret *containers* but deliberately never holds the values —
-anything passed through tfvars ends up readable in Terraform state. Create the
-containers first (the first deploy does this), then add versions:
+Bootstrap created four empty secret containers. **Add a value to each one before
+the first deploy** — Cloud Run mounts them at `latest`, and a secret with no
+version makes the revision fail to start.
+
+Terraform deliberately never holds the values: anything passed through tfvars ends
+up readable in Terraform state.
 
 ```bash
 PROJECT=YOUR_PROJECT_ID
@@ -121,8 +143,18 @@ printf '%s' "sk-ant-your-key" \
   | gcloud secrets versions add booking-anthropic-api-key --project=$PROJECT --data-file=-
 ```
 
-Cloud Run reads the `latest` version of each, so rotating a secret is a new version
-plus a redeploy — no Terraform change.
+`terraform -chdir=infra/bootstrap output next_steps` prints these with your project
+substituted. Confirm all four have a version:
+
+```bash
+for s in google-oauth-client-id google-oauth-client-secret session-secret anthropic-api-key; do
+  printf '%-32s %s\n' "$s" \
+    "$(gcloud secrets versions list booking-$s --project=$PROJECT --format='value(name)' --limit=1 | grep -q . && echo OK || echo MISSING)"
+done
+```
+
+Cloud Run reads `latest`, so rotating a secret later is a new version plus a
+redeploy — no Terraform change.
 
 ### 4. Configure GitHub
 
@@ -312,8 +344,9 @@ helpers are built on `Intl`, so there's no date library in the dependency tree.
   `ADMIN_EMAIL` on every read — so revoking access is an env var change, not a
   session-store purge.
 - **OAuth state** is stored in a single-use cookie and compared on callback.
-- **Secrets never enter Terraform state.** Terraform manages the containers; values
-  are added with `gcloud`.
+- **Secrets never enter Terraform state.** Terraform manages the containers (in the
+  bootstrap stage, so values can be added before the first deploy); the values
+  themselves are added with `gcloud` and only ever read by Cloud Run.
 - **Firestore has delete protection and point-in-time recovery**, and `prevent_destroy`
   so `terraform destroy` can't take the bookings with it.
 

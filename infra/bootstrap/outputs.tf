@@ -24,6 +24,31 @@ output "github_actions_variables" {
   ])
 }
 
+output "next_steps" {
+  description = "Commands to run before the first deploy. The secrets have containers but no values yet."
+
+  value = <<-EOT
+    Add a value to each secret — Cloud Run reads `latest`, and a secret with no
+    version makes the first revision fail to start.
+
+      printf '%s' "YOUR_CLIENT_ID.apps.googleusercontent.com" \
+        | gcloud secrets versions add ${google_secret_manager_secret.app["google_client_id"].secret_id} --project=${var.project_id} --data-file=-
+
+      printf '%s' "GOCSPX-your-client-secret" \
+        | gcloud secrets versions add ${google_secret_manager_secret.app["google_client_secret"].secret_id} --project=${var.project_id} --data-file=-
+
+      openssl rand -base64 48 \
+        | gcloud secrets versions add ${google_secret_manager_secret.app["session_secret"].secret_id} --project=${var.project_id} --data-file=-
+
+      printf '%s' "sk-ant-your-key" \
+        | gcloud secrets versions add ${google_secret_manager_secret.app["anthropic_api_key"].secret_id} --project=${var.project_id} --data-file=-
+
+    Verify all four have a version before deploying:
+
+      gcloud secrets list --project=${var.project_id} --filter="name~${var.service_name}-" --format="table(name)"
+  EOT
+}
+
 output "auth_step_yaml" {
   description = <<-EOT
     The authenticate step with real values substituted, for pasting into any

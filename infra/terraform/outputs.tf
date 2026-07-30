@@ -24,6 +24,6 @@ output "runtime_service_account" {
 }
 
 output "secret_ids" {
-  description = "Secret Manager secrets to populate with `gcloud secrets versions add`."
-  value       = { for k, v in google_secret_manager_secret.app : k => v.secret_id }
+  description = "Secret Manager secrets read by the service. Created in infra/bootstrap."
+  value       = { for k, v in data.google_secret_manager_secret.app : k => v.secret_id }
 }

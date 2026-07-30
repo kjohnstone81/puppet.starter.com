@@ -19,6 +19,12 @@ variable "github_repository" {
   }
 }
 
+variable "service_name" {
+  type        = string
+  description = "Base name for the deployment. Must match service_name in infra/terraform."
+  default     = "booking"
+}
+
 variable "state_bucket_suffix" {
   type        = string
   description = "Suffix for the Terraform state bucket name (prefixed with the project id)."

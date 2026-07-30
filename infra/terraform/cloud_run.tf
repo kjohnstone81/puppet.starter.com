@@ -71,10 +71,10 @@ resource "google_cloud_run_v2_service" "app" {
 
       dynamic "env" {
         for_each = {
-          GOOGLE_OAUTH_CLIENT_ID     = google_secret_manager_secret.app["google_client_id"].secret_id
-          GOOGLE_OAUTH_CLIENT_SECRET = google_secret_manager_secret.app["google_client_secret"].secret_id
-          SESSION_SECRET             = google_secret_manager_secret.app["session_secret"].secret_id
-          ANTHROPIC_API_KEY          = google_secret_manager_secret.app["anthropic_api_key"].secret_id
+          GOOGLE_OAUTH_CLIENT_ID     = data.google_secret_manager_secret.app["google_client_id"].secret_id
+          GOOGLE_OAUTH_CLIENT_SECRET = data.google_secret_manager_secret.app["google_client_secret"].secret_id
+          SESSION_SECRET             = data.google_secret_manager_secret.app["session_secret"].secret_id
+          ANTHROPIC_API_KEY          = data.google_secret_manager_secret.app["anthropic_api_key"].secret_id
         }
 
         content {

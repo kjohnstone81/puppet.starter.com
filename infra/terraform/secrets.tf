@@ -1,35 +1,25 @@
 /**
- * Secret containers only — Terraform does not manage the values.
+ * The secret containers are created by infra/bootstrap and referenced here.
  *
- * Putting secret material in tfvars would write it into Terraform state, which
- * lives in a bucket several people can read. Add versions out of band instead:
- *
- *   printf '%s' "$VALUE" | gcloud secrets versions add booking-session-secret \
- *     --project=<project> --data-file=-
- *
- * Cloud Run reads `latest`, so adding a new version and redeploying rotates a
- * secret with no Terraform change.
+ * Cloud Run mounts each secret at version `latest`, so a container with no
+ * versions would make the first revision fail to start. Creating them in
+ * bootstrap means the values can be added before the first deploy runs, and a
+ * missing secret fails at plan time with a clear "not found" rather than
+ * halfway through an apply.
  */
 
 locals {
   secret_ids = {
-    session_secret       = "${var.service_name}-session-secret"
-    google_client_secret = "${var.service_name}-google-oauth-client-secret"
-    anthropic_api_key    = "${var.service_name}-anthropic-api-key"
     google_client_id     = "${var.service_name}-google-oauth-client-id"
+    google_client_secret = "${var.service_name}-google-oauth-client-secret"
+    session_secret       = "${var.service_name}-session-secret"
+    anthropic_api_key    = "${var.service_name}-anthropic-api-key"
   }
 }
 
-resource "google_secret_manager_secret" "app" {
+data "google_secret_manager_secret" "app" {
   for_each = local.secret_ids
 
   project   = var.project_id
   secret_id = each.value
-  labels    = var.labels
-
-  replication {
-    auto {}
-  }
-
-  depends_on = [google_project_service.required]
 }

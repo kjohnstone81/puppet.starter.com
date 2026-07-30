@@ -30,7 +30,7 @@ resource "google_storage_bucket_iam_member" "runtime_assets" {
 # Access to each secret individually — not roles/secretmanager.secretAccessor
 # across the project.
 resource "google_secret_manager_secret_iam_member" "runtime" {
-  for_each = google_secret_manager_secret.app
+  for_each = data.google_secret_manager_secret.app
 
   project   = var.project_id
   secret_id = each.value.secret_id

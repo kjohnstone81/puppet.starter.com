@@ -42,6 +42,7 @@ resource "google_project_service" "bootstrap" {
     "sts.googleapis.com",
     "serviceusage.googleapis.com",
     "storage.googleapis.com",
+    "secretmanager.googleapis.com",
   ])
 
   project = var.project_id
