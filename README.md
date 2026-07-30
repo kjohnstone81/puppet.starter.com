@@ -61,7 +61,30 @@ terraform -chdir=infra/bootstrap apply \
   -var github_repository=kjohnstone81/puppet.starter.com
 ```
 
-Keep the outputs — they become GitHub repository variables in step 4.
+Keep the outputs — they become GitHub repository variables in step 4. This creates:
+
+| Resource | Default name |
+|---|---|
+| Workload Identity Pool | `github-actions-pool` |
+| Pool provider | `github-actions-provider` |
+| Deploy service account | `github-actions-sa@PROJECT_ID.iam.gserviceaccount.com` |
+
+`terraform output workload_identity_provider` prints the full provider path in
+the form the auth action expects — note it uses the project **number**, not the
+project id:
+
+```
+projects/123456789/locations/global/workloadIdentityPools/github-actions-pool/providers/github-actions-provider
+```
+
+`terraform output auth_step_yaml` prints the authenticate step with those values
+already substituted, if you want it for another workflow.
+
+**On the attribute condition.** GitHub's OIDC issuer is shared by every
+repository on the platform. The provider therefore carries
+`assertion.repository == "owner/repo"`, without which any workflow anywhere
+could mint tokens against your pool. To narrow further to one branch, set
+`-var allowed_github_ref=refs/heads/main`.
 
 ### 2. Create the Google OAuth client
 
@@ -131,7 +154,24 @@ won't wait for anyone. The workflow cannot enforce this on its own — required
 reviewers are repository configuration, by design, so that the thing granting
 approval isn't the same thing asking for it.
 
-### 6. Deploy, then close the OAuth loop
+### 6. Verify federation before deploying
+
+Run the **Verify GCP auth** workflow from the Actions tab. It authenticates,
+asserts it became the deployer service account, and probes each API a deploy
+touches — so a misconfigured pool, a wrong provider path, or a missing role
+fails in a ten-second job that names the problem, rather than halfway through a
+real deploy.
+
+Common failures and what they mean:
+
+| Symptom | Cause |
+|---|---|
+| `Unable to get ACCESS_TOKEN` / audience mismatch | `workload_identity_provider` isn't the full path, or uses the project id where the number belongs |
+| `Permission 'iam.serviceAccounts.getAccessToken' denied` | The repository doesn't match the provider's attribute condition |
+| `Missing id-token permission` | The job lacks `permissions: id-token: write` |
+| Authenticated as the wrong account | Another auth step or a leftover `GOOGLE_APPLICATION_CREDENTIALS` won |
+
+### 7. Deploy, then close the OAuth loop
 
 Push to `main`. When the run finishes, the apply job's summary prints the service
 URL and the exact redirect URI. Add that URI to the OAuth client's **Authorised

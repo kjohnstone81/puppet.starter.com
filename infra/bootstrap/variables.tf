@@ -28,17 +28,28 @@ variable "state_bucket_suffix" {
 variable "deployer_account_id" {
   type        = string
   description = "Account id for the GitHub Actions deployer service account."
-  default     = "booking-deployer"
+  default     = "github-actions-sa"
 }
 
 variable "wif_pool_id" {
   type        = string
   description = "Workload Identity Pool id."
-  default     = "github-actions"
+  default     = "github-actions-pool"
 }
 
 variable "wif_provider_id" {
   type        = string
   description = "Workload Identity Pool provider id."
-  default     = "github-oidc"
+  default     = "github-actions-provider"
+}
+
+variable "allowed_github_ref" {
+  type        = string
+  description = <<-EOT
+    Optional git ref that may impersonate the deployer, e.g.
+    "refs/heads/main". Left empty, any ref in the repository can deploy, which
+    is the usual choice when the workflow itself only triggers on main and an
+    environment approval gates the apply. Set it to lock deploys to one branch.
+  EOT
+  default     = ""
 }

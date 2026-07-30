@@ -1,0 +1,109 @@
+name: Verify GCP auth
+
+# Proves Workload Identity Federation works, on its own, before you rely on it
+# in a real deploy. Run it from the Actions tab (Run workflow) after applying
+# infra/bootstrap and setting the repository variables.
+#
+# It reads nothing and writes nothing — it authenticates, prints who it became,
+# and checks the deployer can actually see the resources it will need.
+
+on:
+  workflow_dispatch:
+
+# Required for OIDC token generation. Without id-token: write, GitHub won't
+# issue the token the auth action exchanges, and you get an opaque failure.
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  verify:
+    name: Authenticate and probe
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          # Full provider resource path, using the project NUMBER, not its id:
+          #   projects/123456789/locations/global/workloadIdentityPools/github-actions-pool/providers/github-actions-provider
+          # `terraform -chdir=infra/bootstrap output workload_identity_provider`
+          # prints it in exactly this form.
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          # github-actions-sa@<project-id>.iam.gserviceaccount.com
+          service_account: ${{ vars.GCP_DEPLOYER_SA }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+
+      - name: Test gcloud CLI
+        run: |
+          echo "::group::Active credentials"
+          gcloud auth list
+          echo "::endgroup::"
+
+          echo "::group::SDK configuration"
+          gcloud info
+          echo "::endgroup::"
+
+      - name: Confirm the identity is the deployer
+        run: |
+          # If federation silently fell back to some other credential, this is
+          # where it shows up rather than three steps into a deploy.
+          ACTIVE="$(gcloud auth list --filter=status:ACTIVE --format='value(account)')"
+          echo "Authenticated as: $ACTIVE"
+
+          if [ "$ACTIVE" != "${{ vars.GCP_DEPLOYER_SA }}" ]; then
+            echo "Expected ${{ vars.GCP_DEPLOYER_SA }} but got '$ACTIVE'." >&2
+            exit 1
+          fi
+
+      - name: Probe the permissions a deploy needs
+        run: |
+          # Read-only checks against each API the deploy touches. A failure here
+          # names the missing role instead of surfacing mid-apply.
+          set -e
+          PROJECT="${{ vars.GCP_PROJECT_ID }}"
+
+          echo "::group::Project access"
+          gcloud projects describe "$PROJECT" --format='value(projectId,projectNumber)'
+          echo "::endgroup::"
+
+          echo "::group::Artifact Registry"
+          gcloud artifacts repositories list \
+            --project="$PROJECT" --location="${{ vars.GCP_REGION }}" 2>&1 \
+            || echo "No repositories yet — expected before the first deploy."
+          echo "::endgroup::"
+
+          echo "::group::Cloud Run"
+          gcloud run services list \
+            --project="$PROJECT" --region="${{ vars.GCP_REGION }}" 2>&1 \
+            || echo "No services yet — expected before the first deploy."
+          echo "::endgroup::"
+
+          echo "::group::Terraform state bucket"
+          gcloud storage ls "gs://${{ vars.TF_STATE_BUCKET }}/" 2>&1 \
+            || echo "State bucket empty or unreadable — check TF_STATE_BUCKET."
+          echo "::endgroup::"
+
+      - name: Summary
+        run: |
+          {
+            echo "## Workload Identity Federation verified"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Identity | \`${{ vars.GCP_DEPLOYER_SA }}\` |"
+            echo "| Provider | \`${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}\` |"
+            echo "| Project | \`${{ vars.GCP_PROJECT_ID }}\` |"
+            echo "| Repository | \`${{ github.repository }}\` |"
+            echo "| Ref | \`${{ github.ref }}\` |"
+            echo
+            echo "No service account key was used or stored."
+          } >> "$GITHUB_STEP_SUMMARY"

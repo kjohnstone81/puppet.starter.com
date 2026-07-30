@@ -142,12 +142,21 @@ resource "google_iam_workload_identity_pool_provider" "github" {
     "attribute.ref"        = "assertion.ref"
   }
 
-  # Without this condition any GitHub repository in the world could mint tokens
-  # for this pool. It restricts the provider to the one repository.
-  attribute_condition = "assertion.repository == \"${var.github_repository}\""
+  # Load-bearing. GitHub's OIDC issuer is shared by every repository on the
+  # platform, so without a condition pinning the repository, any workflow
+  # anywhere could mint tokens against this pool. Optionally narrows further to
+  # a single ref.
+  attribute_condition = join(" && ", compact([
+    "assertion.repository == \"${var.github_repository}\"",
+    var.allowed_github_ref == "" ? "" : "assertion.ref == \"${var.allowed_github_ref}\"",
+  ]))
 
   oidc {
     issuer_uri = "https://token.actions.githubusercontent.com"
+    # allowed_audiences is deliberately unset. Left empty, GCP accepts only the
+    # provider's own resource URL as the audience, which is exactly what
+    # google-github-actions/auth sends by default. Pinning it by hand is easy to
+    # get wrong and buys nothing.
   }
 }
 

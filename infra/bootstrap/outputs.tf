@@ -23,3 +23,19 @@ output "github_actions_variables" {
     "GCP_WORKLOAD_IDENTITY_PROVIDER=${google_iam_workload_identity_pool_provider.github.name}",
   ])
 }
+
+output "auth_step_yaml" {
+  description = <<-EOT
+    The authenticate step with real values substituted, for pasting into any
+    workflow that needs GCP access. The repository workflows read these from
+    repository variables instead, so they need no edit.
+  EOT
+
+  value = <<-EOT
+    - name: Authenticate to Google Cloud
+      uses: google-github-actions/auth@v2
+      with:
+        workload_identity_provider: '${google_iam_workload_identity_pool_provider.github.name}'
+        service_account: '${google_service_account.deployer.email}'
+  EOT
+}
